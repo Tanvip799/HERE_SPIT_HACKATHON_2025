@@ -407,7 +407,8 @@ const App = () => {
       });
 
       // Use your Flask backend URL for transcription
-      const transcriptionUrl = "http://localhost:5005/transcribe"; // Adjust if your transcription endpoint is different
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_IP;
+      const transcriptionUrl = `${backendUrl}/transcribe`; // Adjust if your transcription endpoint is different
       console.log("Sending transcription request to:", transcriptionUrl);
 
       const response = await fetch(transcriptionUrl, {
@@ -486,9 +487,12 @@ const App = () => {
   const sendEmergencyAlert = (coords, transcriptToSend) => {
     let mapUrl = "";
     console.log("Sending alert with coordinates:", coords, "and transcript:", transcriptToSend);
-
+    
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_IP;
+    const processtranscriptionUrl = `${backendUrl}/process_transcript`;
+    
     axios
-      .post("http://localhost:5001/process_transcript", {
+      .post( processtranscriptionUrl, {
         transcript: transcriptToSend, // Use the dynamically provided transcript
         lat: coords.latitude,
         lng: coords.longitude,
