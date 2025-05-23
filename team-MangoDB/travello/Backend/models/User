@@ -1,0 +1,19 @@
+const mongoose = require("mongoose");
+
+const UserSchema = new mongoose.Schema({
+  name: { type: String, required: [true, "Must provide a name"] },
+  email: { type: String, required: [true, "Must provide an email"] },
+  password: { type: String, required: [true, "Must provide a password"] },
+  homeLocation: {
+    lat: { type: Number, default: 0 },
+    lng: { type: Number, default: 0 },
+  },
+  workLocation: {
+    lat: { type: Number, default: 0 },
+    lng: { type: Number, default: 0 },
+  },
+  workTime: { type: Number, default: 0 },
+  frequency: { type: Number, default: 0 },
+});
+
+module.exports = mongoose.model("User", UserSchema);
