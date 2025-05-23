@@ -369,7 +369,8 @@ const Home = () => {
         name: "recording.m4a",
       });
 
-      const url = "http://10.10.114.197:5000/transcribe";
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_IP;
+      const url = `${backendUrl}/transcribe`;
       console.log("Sending transcription request to:", url);
 
       const response = await fetch(url, {
