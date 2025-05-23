@@ -101,7 +101,7 @@ const RoutesScreen = () => {
     return null;
   }
 
-  const API_URL = `http://${process.env.EXPO_PUBLIC_machine_ip}:8080/otp/routers/default/plan?fromPlace=${startLat}%2C${startLng}&toPlace=${endLat}%2C${endLng}&date=2025-01-16&time=09:00:00&arriveBy=false&mode=TRANSIT%2CWALK&maxWalkDistance=1000&numItineraries=10`;
+  const API_URL = `http://${process.env.EXPO_PUBLIC_machine_ip}:8080/otp/routers/default/plan?fromPlace=${startLat}%2C${startLng}&toPlace=${endLat}%2C${endLng}&date=2025-01-16&time=09:00:00&arriveBy=false&mode=TRANSIT%2CWALK&maxWalkDistance=1000&numItineraries=1`;
   console.log(API_URL);
 
   let resData;
