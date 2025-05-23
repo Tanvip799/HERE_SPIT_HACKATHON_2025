@@ -208,4 +208,4 @@ def process_transcript_endpoint():
 if __name__ == '__main__':
     # Note: For production, use a WSGI server like Gunicorn or uWSGI
     # Example: gunicorn --workers 4 --bind 0.0.0.0:5000 your_flask_app_file:app
-    app.run(debug=True, port=5001) # Changed port to 5001 to avoid conflict if other apps use 5000
+    app.run(host='0.0.0.0', port=5001) # Changed port to 5001 to avoid conflict if other apps use 5000

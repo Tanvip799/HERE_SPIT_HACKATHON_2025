@@ -178,12 +178,15 @@ import {
   Linking,
   Vibration,
   Image,
-  ActivityIndicator, // NEW: For showing recording status
+  ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { Accelerometer } from "expo-sensors";
 import * as Location from "expo-location";
 import axios from "axios";
-import { Audio } from "expo-av"; // NEW: Import Audio for recording
+import { Audio } from "expo-av";
+import { MaterialIcons } from "@expo/vector-icons"; // For microphone icon
+import MapView, { Marker } from 'react-native-maps'; // Import MapView and Marker
 
 // Main App component for the crash detection simulator
 const App = () => {
@@ -192,8 +195,8 @@ const App = () => {
   const [crashDetected, setCrashDetected] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [location, setLocation] = useState({
-    latitude: 19.1232,
-    longitude: 72.8361,
+    latitude: 19.1232, // Default to a Mumbai location
+    longitude: 72.8361, // Default to a Mumbai location
   });
   const [accelerometerData, setAccelerometerData] = useState({
     x: 0,
@@ -204,11 +207,12 @@ const App = () => {
   const [message, setMessage] = useState("Monitoring accelerometer data...");
   const [capturedImageUri, setCapturedImageUri] = useState(null);
 
-  // NEW AUDIO RECORDING STATES
+  // AUDIO RECORDING STATES
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [audioRecording, setAudioRecording] = useState(null);
   const [emergencyTranscript, setEmergencyTranscript] = useState("");
-  const [isTranscribing, setIsTranscribing] = useState(false); // NEW: To show transcription loading
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [manualTranscriptInput, setManualTranscriptInput] = useState(""); // For manual text input
 
   // Refs for managing intervals and timeouts
   const countdownIntervalRef = useRef(null);
@@ -225,6 +229,9 @@ const App = () => {
   // Stores a history of accelerometer forces
   const forceHistory = useRef([]);
   const HISTORY_SIZE = 5;
+
+  // Update the API base URL constant
+  const API_BASE_URL = "http://10.10.114.197:5001"; // Change this to match your server
 
   // Function to handle accelerometer data updates
   const processAccelerometerData = useCallback(
@@ -331,7 +338,7 @@ const App = () => {
     );
   }, []);
 
-  // NEW: Function to start emergency audio recording
+  // Function to start emergency audio recording
   const startEmergencyAudioRecording = async () => {
     try {
       if (audioRecording) {
@@ -359,12 +366,15 @@ const App = () => {
         "Could not start audio recording. " + err.message
       );
       // Fallback: If recording fails, send alert without transcript
-      sendEmergencyAlert(location, "Audio recording failed. No transcript available.");
+      sendEmergencyAlert(
+        location,
+        "Audio recording failed. No transcript available."
+      );
       setMessage("Audio recording failed, sending alert without transcript.");
     }
   };
 
-  // NEW: Function to stop emergency audio recording and trigger transcription
+  // Function to stop emergency audio recording and trigger transcription
   const stopEmergencyAudioRecording = async () => {
     try {
       setIsRecordingAudio(false);
@@ -385,12 +395,17 @@ const App = () => {
       );
       setIsTranscribing(false);
       // Fallback: If stopping fails, send alert without transcript
-      sendEmergencyAlert(location, "Audio recording stop failed. No transcript available.");
-      setMessage("Audio recording stop failed, sending alert without transcript.");
+      sendEmergencyAlert(
+        location,
+        "Audio recording stop failed. No transcript available."
+      );
+      setMessage(
+        "Audio recording stop failed, sending alert without transcript."
+      );
     }
   };
 
-  // NEW: Function to transcribe emergency audio
+  // Function to transcribe emergency audio
   const transcribeEmergencyAudio = async (audioUri) => {
     try {
       setIsTranscribing(true);
@@ -402,12 +417,11 @@ const App = () => {
 
       formData.append("file", {
         uri: fileUri,
-        type: "audio/m4a", // Assuming .m4a format from Expo's HIGH_QUALITY preset
+        type: "audio/m4a",
         name: "emergency_recording.m4a",
       });
 
-      // Use your Flask backend URL for transcription
-      const transcriptionUrl = "http://localhost:5005/transcribe"; // Adjust if your transcription endpoint is different
+      const transcriptionUrl = `http://10.10.114.197:5000/transcribe`; // Use API_BASE_URL for consistency if it was same
       console.log("Sending transcription request to:", transcriptionUrl);
 
       const response = await fetch(transcriptionUrl, {
@@ -443,8 +457,21 @@ const App = () => {
         "Could not transcribe audio. " + error.message
       );
       // Fallback: If transcription fails, send alert with a default message
-      sendEmergencyAlert(location, "No detailed transcript available due to error.");
+      sendEmergencyAlert(
+        location,
+        "No detailed transcript available due to error."
+      );
       setMessage("Transcription failed, sending alert with default message.");
+    }
+  };
+
+  // Function to handle sending alert from manual text input
+  const handleManualSend = () => {
+    if (manualTranscriptInput.trim()) {
+      sendEmergencyAlert(location, manualTranscriptInput.trim());
+      setManualTranscriptInput(""); // Clear input after sending
+    } else {
+      Alert.alert("No message", "Please type an emergency message or record audio.");
     }
   };
 
@@ -458,38 +485,45 @@ const App = () => {
     setCountdown(10);
     simulateTakePicture();
     setEmergencyTranscript(""); // Clear previous transcript
+    setManualTranscriptInput(""); // Clear manual input
 
     // Start the countdown interval for the emergency alert
     countdownIntervalRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(countdownIntervalRef.current); // Stop countdown
-          // Instead of sending alert, trigger audio recording
-          startEmergencyAudioRecording();
+          // Automatically start audio recording after countdown if not cancelled
+          if (!isRecordingAudio && !isTranscribing) { // Only start if not already recording/transcribing
+            startEmergencyAudioRecording();
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    // The timeout below now triggers start recording if user doesn't cancel
+    // This timeout will ensure recording starts even if countdown is interrupted
     crashTimeoutRef.current = setTimeout(() => {
-      if (crashDetected) {
-        // Double-check if still in crash state (not cancelled by user)
-        clearInterval(countdownIntervalRef.current); // Ensure countdown is stopped
-        startEmergencyAudioRecording(); // Trigger audio recording automatically
+      if (crashDetected && !isRecordingAudio && !isTranscribing) {
+        clearInterval(countdownIntervalRef.current);
+        startEmergencyAudioRecording();
       }
     }, CRASH_ALERT_DELAY);
-  }, [crashDetected, location, simulateTakePicture]);
+  }, [crashDetected, location, simulateTakePicture, isRecordingAudio, isTranscribing]);
 
   // Modified sendEmergencyAlert to accept transcript
   const sendEmergencyAlert = (coords, transcriptToSend) => {
     let mapUrl = "";
-    console.log("Sending alert with coordinates:", coords, "and transcript:", transcriptToSend);
+    console.log(
+      "Sending alert with coordinates:",
+      coords,
+      "and transcript:",
+      transcriptToSend
+    );
 
     axios
-      .post("http://localhost:5001/process_transcript", {
-        transcript: transcriptToSend, // Use the dynamically provided transcript
+      .post(`${API_BASE_URL}/process_transcript`, {
+        transcript: transcriptToSend,
         lat: coords.latitude,
         lng: coords.longitude,
       })
@@ -501,8 +535,8 @@ const App = () => {
 
         // 1. Transcript Analysis
         if (transcriptToSend) {
-            detailedMessage += `--- Your Emergency Description ---\n`;
-            detailedMessage += `${transcriptToSend}\n\n`;
+          detailedMessage += `--- Your Emergency Description ---\n`;
+          detailedMessage += `${transcriptToSend}\n\n`;
         }
 
         if (data.transcript_analysis) {
@@ -528,7 +562,8 @@ const App = () => {
           detailedMessage += `Approx. Location: ${coords.latitude.toFixed(
             4
           )}, ${coords.longitude.toFixed(4)}\n`;
-          mapUrl = `http://maps.google.com/maps?q=${coords.latitude},${coords.longitude}`; // Correct Google Maps URL
+          // Correct Google Maps URL format
+          mapUrl = `https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`;
           detailedMessage += `\n`;
         } else {
           detailedMessage += "Location: Not available\n\n";
@@ -567,6 +602,7 @@ const App = () => {
         setIsMonitoring(true);
         setCapturedImageUri(null);
         setEmergencyTranscript(""); // Clear transcript after sending
+        setManualTranscriptInput(""); // Clear manual input
 
         Alert.alert(
           "Emergency Alert Dispatched!",
@@ -621,6 +657,7 @@ const App = () => {
         setIsMonitoring(true);
         setCapturedImageUri(null);
         setEmergencyTranscript(""); // Clear transcript on error
+        setManualTranscriptInput(""); // Clear manual input on error
       });
   };
 
@@ -629,7 +666,9 @@ const App = () => {
     clearInterval(countdownIntervalRef.current);
     clearTimeout(crashTimeoutRef.current);
     if (isRecordingAudio && audioRecording) {
-      audioRecording.stopAndUnloadAsync().catch(e => console.error("Error stopping audio on cancel:", e));
+      audioRecording.stopAndUnloadAsync().catch((e) =>
+        console.error("Error stopping audio on cancel:", e)
+      );
     }
     setIsRecordingAudio(false);
     setIsTranscribing(false);
@@ -646,6 +685,7 @@ const App = () => {
     setMessage("Monitoring accelerometer data...");
     setCapturedImageUri(null);
     setEmergencyTranscript(""); // Ensure transcript is cleared on full reset
+    setManualTranscriptInput(""); // Clear manual input on full reset
   };
 
   // Cleanup effect
@@ -659,12 +699,19 @@ const App = () => {
       if (locationSubscriptionRef.current) {
         locationSubscriptionRef.current.remove();
       }
-      if (audioRecording) { // Clean up audio recording if active
-        audioRecording.stopAndUnloadAsync().catch(e => console.error("Error unloading audio on unmount:", e));
+      if (audioRecording?.getStatusAsync) {
+        audioRecording
+          .getStatusAsync()
+          .then((status) => {
+            if (!status.isLoaded) return;
+            return audioRecording.stopAndUnloadAsync();
+          })
+          .catch((e) => {
+            console.log("Audio cleanup:", e.message);
+          });
       }
     };
-  }, [audioRecording]); // Depend on audioRecording to clean it up correctly
-
+  }, [audioRecording]);
 
   return (
     <View style={styles.container}>
@@ -672,6 +719,39 @@ const App = () => {
         <Text style={styles.title}>
           <Text style={styles.icon}>🚨</Text> Crash Detection
         </Text>
+
+        {/* Manual Text Input and Voice Button */}
+        <View style={styles.textInputContainer}>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Type emergency message or use voice..."
+            placeholderTextColor="#888"
+            value={manualTranscriptInput}
+            onChangeText={setManualTranscriptInput}
+            editable={!isRecordingAudio && !isTranscribing} // Disable when recording/transcribing
+          />
+          <TouchableOpacity
+            style={styles.voiceButton}
+            onPress={isRecordingAudio ? stopEmergencyAudioRecording : startEmergencyAudioRecording}
+            disabled={isTranscribing} // Disable while transcribing
+          >
+            {isRecordingAudio ? (
+              <MaterialIcons name="stop" size={24} color="#FFF" />
+            ) : (
+              <MaterialIcons name="mic" size={24} color="#FFF" />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Send Button for Manual Input */}
+        <TouchableOpacity
+          onPress={handleManualSend}
+          style={styles.sendButton}
+          disabled={isRecordingAudio || isTranscribing || !manualTranscriptInput.trim()} // Disable if recording/transcribing or no text
+        >
+          <Text style={styles.buttonText}>Send Emergency Message</Text>
+        </TouchableOpacity>
+
 
         <View style={styles.messageContainer}>
           <Text style={styles.messageText}>{message}</Text>
@@ -687,7 +767,7 @@ const App = () => {
             {isRecordingAudio ? (
               // Display recording UI
               <View style={styles.recordingContainer}>
-                <ActivityIndicator size="large" color="#ff6b6b" />
+                <ActivityIndicator size="large" color="#006400" />
                 <Text style={styles.recordingText}>
                   Please speak about the emergency... ({countdown}s)
                 </Text>
@@ -701,7 +781,7 @@ const App = () => {
             ) : isTranscribing ? (
               // Display transcribing UI
               <View style={styles.recordingContainer}>
-                <ActivityIndicator size="large" color="#ff6b6b" />
+                <ActivityIndicator size="large" color="#006400" />
                 <Text style={styles.recordingText}>Transcribing audio...</Text>
               </View>
             ) : (
@@ -734,15 +814,6 @@ const App = () => {
           </View>
         )}
 
-        {!crashDetected && ( // Only show if no crash is currently detected
-          <TouchableOpacity
-            onPress={handleCrash}
-            style={styles.simulateCrashButton}
-          >
-            <Text style={styles.buttonText}>Simulate Crash</Text>
-          </TouchableOpacity>
-        )}
-
         {emergencyTranscript && !isTranscribing && ( // Display transcript after it's received
             <View style={styles.transcriptBox}>
                 <Text style={styles.transcriptTitle}>Your Emergency Description:</Text>
@@ -750,13 +821,31 @@ const App = () => {
             </View>
         )}
 
-
         {location && (
-          <View style={styles.locationInfoBox}>
+          <View style={styles.mapContainer}>
             <Text style={styles.locationInfoTitle}>Last Known Location</Text>
+            <MapView
+              style={styles.map}
+              initialRegion={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+                latitudeDelta: 0.005, // Smaller delta for a more zoomed-in view
+                longitudeDelta: 0.005,
+              }}
+              pitchEnabled={false} // Disable 3D tilt
+              rotateEnabled={false} // Disable rotation
+              scrollEnabled={true} // Allow scrolling
+              zoomEnabled={true} // Allow zooming
+            >
+              <Marker
+                coordinate={{ latitude: location.latitude, longitude: location.longitude }}
+                title="Your Location"
+                description="Potential emergency site"
+              />
+            </MapView>
             <TouchableOpacity
               onPress={() => {
-                const mapUrl = `http://maps.google.com/maps?q=${location.latitude},${location.longitude}`; // Corrected Google Maps URL
+                const mapUrl = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
                 Linking.canOpenURL(mapUrl).then((supported) => {
                   if (supported) {
                     Linking.openURL(mapUrl);
@@ -775,6 +864,14 @@ const App = () => {
           </View>
         )}
       </View>
+      {!crashDetected && ( // Only show if no crash is currently detected
+        <TouchableOpacity
+          onPress={handleCrash}
+          style={styles.simulateCrashButton}
+        >
+          <Text style={styles.buttonText}>Simulate Crash</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -785,53 +882,65 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#040417", // Dark background
+    backgroundColor: "#F0F2F5", // Lighter background for a modern look
     padding: 20,
+    position: 'relative', // Added for absolute positioning of simulate button
   },
   card: {
-    backgroundColor: "#1a1a2e", // Darker card background
+    backgroundColor: "#FFFFFF", // White card background
     borderRadius: 15,
     padding: 25,
     width: "100%",
     maxWidth: 400,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 15, // For Android shadow
-    borderColor: "#333",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 8, // For Android shadow
+    borderColor: "#EEE", // Lighter border
     borderWidth: 1,
+    marginBottom: 20, // Add some bottom margin to separate from the simulate button
   },
   title: {
     fontSize: 26,
     fontWeight: "bold",
     marginBottom: 25,
     textAlign: "center",
-    color: "#ff6b6b", // Reddish accent color
+    color: "#006400", // Dark green title
   },
   icon: {
     fontSize: 28,
     marginRight: 10,
   },
-  messageContainer: {
-    marginBottom: 20,
-    alignItems: "center",
+  textInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    borderColor: '#CCC',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    backgroundColor: '#F9F9F9',
   },
-  messageText: {
-    fontSize: 18,
-    color: "#e0e0e0", // Light gray text
-    marginBottom: 5,
-    textAlign: "center",
+  textInput: {
+    flex: 1,
+    height: 50,
+    fontSize: 16,
+    color: '#333',
   },
-  subMessageText: {
-    fontSize: 14,
-    color: "#a0a0a0", // Lighter gray for sub-messages
+  voiceButton: {
+    backgroundColor: '#006400', // Dark green for voice button
+    padding: 12,
+    borderRadius: 8,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  simulateCrashButton: {
-    backgroundColor: "#9C27B0", // Purple for simulate
+  sendButton: {
+    backgroundColor: "#006400", // Dark green for send button
     ...Platform.select({
       ios: {
-        shadowColor: "#9C27B0",
+        shadowColor: "#006400",
         shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.4,
         shadowRadius: 10,
@@ -845,14 +954,50 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 20,
     marginBottom: 15,
   },
-  cancelButton: {
-    backgroundColor: "#F44336", // Red for cancel
+  messageContainer: {
+    marginBottom: 20,
+    alignItems: "center",
+  },
+  messageText: {
+    fontSize: 18,
+    color: "#333", // Darker text for readability
+    marginBottom: 5,
+    textAlign: "center",
+  },
+  subMessageText: {
+    fontSize: 14,
+    color: "#666", // Medium gray for sub-messages
+  },
+  simulateCrashButton: {
+    backgroundColor: "#FF0000", // Bright red for simulate crash
     ...Platform.select({
       ios: {
-        shadowColor: "#F44336",
+        shadowColor: "#FF0000",
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+    position: 'absolute', // Absolute positioning
+    bottom: 40, // Distance from bottom
+    right: 40, // Distance from right
+    width: 150, // Fixed width
+    height: 50, // Fixed height
+    borderRadius: 25, // Make it circular
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000, // Ensure it's on top
+  },
+  cancelButton: {
+    backgroundColor: "#DC2626", // Red for cancel (kept red for emergency visual)
+    ...Platform.select({
+      ios: {
+        shadowColor: "#DC2626",
         shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.4,
         shadowRadius: 10,
@@ -874,8 +1019,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   alertBox: {
-    backgroundColor: "rgba(255, 0, 0, 0.2)",
-    borderColor: "#ff6b6b",
+    backgroundColor: "rgba(255, 0, 0, 0.1)", // Lighter red tint
+    borderColor: "#FF0000", // Solid red border
     borderWidth: 1,
     borderRadius: 10,
     padding: 20,
@@ -885,13 +1030,13 @@ const styles = StyleSheet.create({
   alertTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#ff6b6b",
+    color: "#FF0000", // Red color
     marginBottom: 10,
     textAlign: "center",
   },
   alertLocation: {
     fontSize: 14,
-    color: "#ffb3b3",
+    color: "#FF5555", // Lighter red
     marginBottom: 10,
     textAlign: "center",
   },
@@ -901,7 +1046,7 @@ const styles = StyleSheet.create({
   },
   imagePreviewText: {
     fontSize: 16,
-    color: "#e0e0e0",
+    color: "#333",
     marginBottom: 10,
   },
   capturedImage: {
@@ -909,35 +1054,57 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#CCC",
     resizeMode: "contain",
   },
-  locationInfoBox: {
+  mapContainer: {
     marginTop: 30,
-    backgroundColor: "#2a2a3e",
+    backgroundColor: "#F0F0F0", // Light gray background
     borderRadius: 10,
     padding: 15,
     alignItems: "center",
-    borderColor: "#444",
+    borderColor: "#DDD",
     borderWidth: 1,
+    height: 300, // Fixed height for the map container
+    width: '100%',
+    overflow: 'hidden', // Ensures the map respects the border radius
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject, // Make the map fill its container
+    borderRadius: 10, // Apply border radius to the map itself
   },
   locationInfoTitle: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: "#333",
     marginBottom: 10,
+    zIndex: 1, // Ensure title is above map content
+    backgroundColor: '#F0F0F0', // Match background for readability
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   mapLink: {
-    color: "#64B5F6",
+    color: "#007BFF", // Blue link color
     fontSize: 16,
     textDecorationLine: "underline",
+    marginTop: 10, // Space between map and link
     marginBottom: 5,
+    zIndex: 1, // Ensure link is clickable
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   locationCoords: {
     fontSize: 14,
-    color: "#a0a0a0",
+    color: "#666",
+    zIndex: 1,
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
-  // NEW STYLES FOR RECORDING UI
   recordingContainer: {
     alignItems: 'center',
     paddingVertical: 20,
@@ -945,35 +1112,34 @@ const styles = StyleSheet.create({
   recordingText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#333', // Dark text for recording
     marginTop: 10,
     textAlign: 'center',
   },
   stopRecordingButton: {
-    backgroundColor: '#dc2626', // Red for stop
+    backgroundColor: '#DC2626', // Red for stop recording button
     paddingVertical: 12,
     paddingHorizontal: 25,
     borderRadius: 10,
     marginTop: 20,
   },
-  // NEW STYLE FOR TRANSCRIPT DISPLAY
   transcriptBox: {
-      backgroundColor: "#2a2a3e",
+      backgroundColor: "#F0F0F0", // Light gray
       borderRadius: 10,
       padding: 15,
       marginTop: 20,
-      borderColor: "#444",
+      borderColor: "#DDD",
       borderWidth: 1,
   },
   transcriptTitle: {
       fontSize: 16,
       fontWeight: 'bold',
-      color: '#e0e0e0',
+      color: '#333',
       marginBottom: 5,
   },
   transcriptText: {
       fontSize: 14,
-      color: '#a0a0a0',
+      color: '#666',
   },
 });
 
