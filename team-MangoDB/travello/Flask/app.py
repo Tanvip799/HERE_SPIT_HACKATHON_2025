@@ -151,16 +151,14 @@ def find_places_within_radius(center_lat, center_lng, radius_meters, dept_table_
             return None
 
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        # Using ST_MakePoint with longitude first, then latitude, as is standard for PostGIS.
-        # The table name is double-quoted to handle potential case sensitivity or special characters if any,
-        # but the primary security is the ALLOWED_DEPARTMENTS check.
         query = f"""
           SELECT
             id,
             name,
             ST_Distance(location, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography) AS distance_meters,
             ST_Y(location::geometry) AS latitude,
-            ST_X(location::geometry) AS longitude
+            ST_X(location::geometry) AS longitude,
+            ST_AsGeoJSON(location)::json AS location_geojson
           FROM "{dept_table_name}"
           WHERE ST_DWithin(location, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, %s)
           ORDER BY distance_meters
@@ -168,6 +166,14 @@ def find_places_within_radius(center_lat, center_lng, radius_meters, dept_table_
         """
         cursor.execute(query, (center_lng, center_lat, center_lng, center_lat, radius_meters))
         closest_place = cursor.fetchone()
+        
+        if closest_place:
+            # Add formatted coordinates for easier frontend use
+            closest_place['coordinates'] = {
+                'lat': float(closest_place['latitude']),
+                'lng': float(closest_place['longitude'])
+            }
+            
         return closest_place if closest_place else None
 
     except psycopg2.Error as e:
@@ -269,7 +275,7 @@ def process_transcript_endpoint():
 
         # Perform Langchain processing using synchronous method
         processed_transcript_data = process_transcript_with_langchain_sync(transcript)
-
+        print(processed_transcript_data)
         if processed_transcript_data is None:
             app.logger.warning("Transcript processing with Langchain failed or returned no data.")
             # Depending on requirements, you might want to proceed without LLM analysis
@@ -284,8 +290,10 @@ def process_transcript_endpoint():
         for dept_name in depts_to_contact:
             if dept_name in ALLOWED_DEPARTMENTS:
                 closest_place = find_places_within_radius(lat, lng, SEARCH_RADIUS_METERS, dept_name)
+                print(closest_place)
                 closest_places_results[dept_name] = closest_place # Will be None if not found
                 if closest_place:
+                    print(closest_place)
                     app.logger.info(f"Found closest {dept_name}: {closest_place.get('name')}")
                 else:
                     app.logger.info(f"No {dept_name} found within radius for lat/lng: {lat}/{lng}")
