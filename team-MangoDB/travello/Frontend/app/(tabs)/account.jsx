@@ -20,7 +20,7 @@ import * as Location from "expo-location";
 import axios from "axios";
 import { Audio } from "expo-av";
 import { MaterialIcons, FontAwesome, Ionicons } from "@expo/vector-icons";
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 
 const { width, height } = Dimensions.get('window');
 
@@ -30,6 +30,7 @@ const App = () => {
   const [crashDetected, setCrashDetected] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const [location, setLocation] = useState(null);
+  const [serviceRoutes, setServiceRoutes] = useState({});
   const [accelerometerData, setAccelerometerData] = useState({
     x: 0,
     y: 0,
@@ -208,7 +209,32 @@ const App = () => {
       setMessage("Audio recording failed, sending alert without transcript.");
     }
   };
+  const fetchRoute = async (startLat, startLng, endLat, endLng, serviceType) => {
+    try {
+      const response = await axios.post(
+        `https://api.olamaps.io/routing/v1/directions/basic?origin=${startLat}%2C${startLng}&destination=${endLat}%2C${endLng}&alternatives=false&steps=true&overview=full&language=en&api_key=am3K573hJ9mGtTnilRWVNUv1SMhdMeXhr6LvMaGK`,
+        null,
+        {
+          headers: {
+            'accept': 'application/json',
+            'origin': 'http://localhost:8081'
+          }
+        }
+      );
 
+      console.log(`Route data for ${serviceType}:`, response.data);
+
+      if (response.data && response.data.routes && response.data.routes[0]) {
+        // Store the overview_polyline instead of geometry
+        setServiceRoutes(prev => ({
+          ...prev,
+          [serviceType]: response.data.routes[0].overview_polyline
+        }));
+      }
+    } catch (error) {
+      console.error(`Error fetching route for ${serviceType}:`, error);
+    }
+  };
   const stopEmergencyAudioRecording = async () => {
     try {
       setIsRecordingAudio(false);
@@ -362,6 +388,20 @@ const App = () => {
         console.log('Emergency Response Data:', res.data);
         setEmergencyResponse(data);
         setNearbyServices(data.closest_nearby_services);
+        
+        // Fetch routes for each service
+        Object.entries(data.closest_nearby_services).forEach(([type, service]) => {
+          if (service && service.latitude && service.longitude) {
+            fetchRoute(
+              coords.latitude,
+              coords.longitude,
+              service.latitude,
+              service.longitude,
+              type
+            );
+          }
+        });
+        
         setShowResponseModal(true);
         
         setMessage(`🚨 Emergency Alert Dispatched!`);
@@ -398,7 +438,53 @@ const App = () => {
     setMessage("Emergency alert cancelled.");
     resetDetection();
   };
+// Add this function to decode the polyline
+const decodePolyline = (str) => {
+  var index = 0,
+      lat = 0,
+      lng = 0,
+      coordinates = [],
+      shift = 0,
+      result = 0,
+      byte = null,
+      latitude_change,
+      longitude_change;
 
+  // Coordinates have variable length when encoded, so just keep
+  // track of whether we've hit the end of the string. In each
+  // loop iteration, a single coordinate is decoded.
+  while (index < str.length) {
+    // Reset shift, result, and byte
+    byte = null;
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = str.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+
+    shift = result = 0;
+
+    do {
+      byte = str.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+
+    lat += latitude_change;
+    lng += longitude_change;
+
+    coordinates.push([lat / 1E5, lng / 1E5]);
+  }
+
+  return coordinates;
+};
   // Reset detection
   const resetDetection = () => {
     setCrashDetected(false);
@@ -619,19 +705,6 @@ const App = () => {
                   </View>
                 </Marker>
               </MapView>
-              <TouchableOpacity
-                onPress={() => {
-                  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
-                  Linking.canOpenURL(mapUrl).then((supported) => {
-                    if (supported) {
-                      Linking.openURL(mapUrl);
-                    }
-                  });
-                }}
-                style={styles.mapLinkButton}
-              >
-                <Text style={styles.mapLink}>Open in Google Maps</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -739,7 +812,24 @@ const App = () => {
                     {Object.entries(nearbyServices).map(([type, service]) => 
                       renderServiceMarker(service, type)
                     )}
-                  </MapView>
+{Object.entries(serviceRoutes).map(([type, route]) => (
+    route && (
+      <Polyline
+        key={type}
+        coordinates={decodePolyline(route).map(coord => ({
+          latitude: coord[0],
+          longitude: coord[1]
+        }))}
+        strokeColor={
+          type === 'police' ? '#2E86C1' :
+          type === 'hospital' ? '#E74C3C' :
+          type === 'firebrigade' ? '#E67E22' : '#3498DB'
+        }
+        strokeWidth={3}
+      />
+    )
+  ))}
+  </MapView>
 
                   <View style={styles.servicesList}>
                     {Object.entries(nearbyServices).map(([type, service]) => (

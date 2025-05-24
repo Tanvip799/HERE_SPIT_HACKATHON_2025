@@ -386,6 +386,15 @@ const CustomMap = () => {
         <Text style={styles.detailsButtonText}>Route Details</Text>
       </TouchableOpacity>
 
+      <View className="h-10 w-[8rem] bg-white absolute z-10 bottom-1 left-1">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 10, height: 10, backgroundColor: '#4CAF50', borderRadius: 5 }} />
+          <Text style={{ fontSize: 12, color: '#333' }}>Start</Text>
+          <View style={{ width: 10, height: 10, backgroundColor: '#F44336', borderRadius: 5, marginLeft: 8 }} />
+          <Text style={{ fontSize: 12, color: '#333' }}>End</Text>
+        </View>
+      </View>
+
       {/* Bottom sheet modal */}
       <Modal
         visible={modalVisible}

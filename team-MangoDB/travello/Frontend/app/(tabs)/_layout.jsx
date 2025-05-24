@@ -100,7 +100,7 @@ export default function Layout() {
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="person" color={color} size={24} />
             ),
-            tabBarLabel: "Account",
+            tabBarLabel: "Safety",
           }}
         />
       </Tabs>

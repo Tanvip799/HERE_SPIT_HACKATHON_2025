@@ -4,9 +4,11 @@ import { Slot, Stack, SplashScreen } from 'expo-router'
 import { useFonts } from "expo-font";
 import "../global.css";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { LogBox } from 'react-native';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+LogBox.ignoreAllLogs()
 
 const RootLayout = () => {
   const [fontsLoaded, error] = useFonts({
