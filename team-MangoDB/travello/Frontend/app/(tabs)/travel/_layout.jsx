@@ -46,6 +46,20 @@ export default function TravelLayout() {
                 }} 
             />
             <Stack.Screen 
+                name="testmapscreen" 
+                options={{
+                    headerTitle: 'Your Route',
+                    headerTitleAlign: 'center',
+                    headerStyle: {
+                        height: 80,
+                    },
+                    headerTitleStyle: {
+                        fontSize: 18,
+                        fontWeight: 'bold',
+                    },
+                }} 
+            />
+            <Stack.Screen 
                 name="PhotoView" 
                 options={{
                     headerTitle: 'Street View',
