@@ -40,7 +40,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Database Configuration
 DB_NAME = os.getenv("DB_NAME", 'db123')
-DB_USER = os.getenv("DB_USER", 'postgres')
+DB_USER = os.getenv("DB_USER", 'shrihari')
 DB_PASSWORD = os.getenv("DB_PASSWORD", '5432')
 DB_HOST = os.getenv("DB_HOST", 'localhost')
 DB_PORT = os.getenv("DB_PORT", '5432')
@@ -315,4 +315,4 @@ def process_transcript_endpoint():
 
 # --- Main Execution Block ---
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5002)
